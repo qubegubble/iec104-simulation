@@ -1,0 +1,39 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU (for multi-arch, optional)
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build image and load
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile
+          tags: user/iec104-simulation:ci-${{ github.sha }}
+          load: true
+
+      - name: Show image
+        run: docker images --format '{{.Repository}}:{{.Tag}} {{.Size}}'
+
+      - name: Run tests inside container
+        run: |
+          docker run --rm user/iec104-simulation:ci-${{ github.sha }} python -m pytest -q
