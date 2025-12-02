@@ -41,6 +41,31 @@ def before_read(point: c104.Point) -> None:
 def load_datapoints_file(path: str | Path, start_io: int | None = None) -> dict[int, DataPoint]:
 
     p = Path(path)
+
+    tried = [str(p)]
+    if not p.exists():
+        candidates = []
+        try:
+            candidates.append(Path(__file__).with_name(p.name))
+        except Exception:
+            pass
+    
+        candidates.append(Path("/app/src") / p.name)
+        candidates.append(Path("/app") / p.name)
+        candidates.append(Path.cwd() / p.name)
+
+        found = None
+        for c in candidates:
+            tried.append(str(c))
+            if c.exists():
+                found = c
+                break
+
+        if found is None:
+            raise FileNotFoundError(f"Datapoints file not found. Tried: {tried}")
+
+        p = found
+
     data = json.loads(p.read_text(encoding="utf-8"))
     out: dict[int, DataPoint] = {}
     next_io = start_io if start_io is not None else 1
@@ -93,9 +118,9 @@ def main():
     
     pts = list(create_points.values())
     if not pts:
-        print("No datapoints created, exiting")
-        return
-    
+        print("No datapoints created; continuing without datapoints")
+
+    # Deduplicate points (safeguard against accidental duplicates)
     selected = []
     seen = set()
     for p in pts[:10]:
@@ -104,15 +129,16 @@ def main():
             continue
         seen.add(pid)
         selected.append(p)
-    try:
-        batch = c104.Batch(cause=c104.Cot.SPONTANEOUS, points=pts[:10])
-    except ValueError as e:
-        print("Failed to create batch:", e)
-        return
 
-    print("Batch prepared with", len(batch.points) if hasattr(batch, "points") else len(selected))
+    batch = None
+    if selected:
+        try:
+            batch = c104.Batch(cause=c104.Cot.SPONTANEOUS, points=selected)
+        except ValueError as e:
+            print("Failed to create batch:", e)
 
-    # start
+    print("Batch prepared with", (len(batch.points) if (batch is not None and hasattr(batch, "points")) else len(selected)))
+
     server.start()
 
     while not server.has_active_connections:
@@ -122,12 +148,18 @@ def main():
     time.sleep(1)
 
     print("transmit batch 1")
-    server.transmit_batch(batch)
+    if batch is not None:
+        server.transmit_batch(batch)
+    else:
+        print("Skipping transmit batch 1: no batch prepared")
 
     time.sleep(1)
 
     print("transmit batch 2")
-    server.transmit_batch(batch)
+    if batch is not None:
+        server.transmit_batch(batch)
+    else:
+        print("Skipping transmit batch 2: no batch prepared")
 
     time.sleep(1)
     
