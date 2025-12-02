@@ -84,5 +84,3 @@ If you cannot run Docker locally, this repository includes a GitHub Actions work
 **Contact**
 
 - Questions or suggestions: open an issue in this repository.
-# iec104-simulation
-Small Python project that can simulate a IEC 60870-5-104 capable device.
