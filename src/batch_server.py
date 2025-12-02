@@ -1,6 +1,9 @@
 import c104
 import time
 import json
+import logging
+import os
+import sys
 from datapoint import DataPoint
 from pathlib import Path
 from data_simulator import DataSimulator
@@ -31,12 +34,14 @@ def _simulate_for_meta(point) -> float:
     return float(0)
 
 def before_auto_transmit(point: c104.Point) -> None:
-        point.value = _simulate_for_meta(point)
-        print(f"{point.type} BEFORE AUTOMATIC REPORT on IOA: {point.io_address} VALUE: {point.value}")
+    point.value = _simulate_for_meta(point)
+    logger = logging.getLogger("iec104-simulation.batch_server")
+    logger.info("%s BEFORE AUTOMATIC REPORT on IOA: %s VALUE: %s", point.type, point.io_address, point.value)
 
 def before_read(point: c104.Point) -> None:
-        point.value = _simulate_for_meta(point)
-        print("{0} BEFORE READ or INTERROGATION on IOA: {1} VALUE: {2}".format(point.type, point.io_address, point.value))
+    point.value = _simulate_for_meta(point)
+    logger = logging.getLogger("iec104-simulation.batch_server")
+    logger.info("%s BEFORE READ or INTERROGATION on IOA: %s VALUE: %s", point.type, point.io_address, point.value)
 
 def load_datapoints_file(path: str | Path, start_io: int | None = None) -> dict[int, DataPoint]:
 
@@ -116,11 +121,11 @@ def main():
 
     create_points = create_datapoints(station, json_path="Datapoints.json", start_io=8, report_ms_default=3000)
     
+    logger = logging.getLogger("iec104-simulation.batch_server")
     pts = list(create_points.values())
     if not pts:
-        print("No datapoints created; continuing without datapoints")
+        logger.info("No datapoints created; continuing without datapoints")
 
-    # Deduplicate points (safeguard against accidental duplicates)
     selected = []
     seen = set()
     for p in pts[:10]:
@@ -135,43 +140,59 @@ def main():
         try:
             batch = c104.Batch(cause=c104.Cot.SPONTANEOUS, points=selected)
         except ValueError as e:
-            print("Failed to create batch:", e)
+            logger.error("Failed to create batch: %s", e)
 
-    print("Batch prepared with", (len(batch.points) if (batch is not None and hasattr(batch, "points")) else len(selected)))
+    logger.info("Batch prepared with %s", (len(batch.points) if (batch is not None and hasattr(batch, "points")) else len(selected)))
 
     server.start()
 
     while not server.has_active_connections:
-        print("Waiting for connection")
+        logger.info("Waiting for connection")
         time.sleep(1)
 
     time.sleep(1)
 
-    print("transmit batch 1")
+    logger.info("transmit batch 1")
     if batch is not None:
         server.transmit_batch(batch)
     else:
-        print("Skipping transmit batch 1: no batch prepared")
+        logger.info("Skipping transmit batch 1: no batch prepared")
 
     time.sleep(1)
 
-    print("transmit batch 2")
+    logger.info("transmit batch 2")
     if batch is not None:
         server.transmit_batch(batch)
     else:
-        print("Skipping transmit batch 2: no batch prepared")
+        logger.info("Skipping transmit batch 2: no batch prepared")
 
     time.sleep(1)
     
     c = 0
     while server.has_open_connections and c<30:
         c += 1
-        print("Keep alive until disconnected")
+        logger.info("Keep alive until disconnected")
         time.sleep(1)
 
+def setup_logging():
+    level_name = os.getenv("LOG_LEVEL", "INFO").upper()
+    level = getattr(logging, level_name, logging.INFO)
+    handler = logging.StreamHandler(sys.stdout)
+    fmt = "%Y-%m-%dT%H:%M:%S"
+    formatter = logging.Formatter("%(asctime)s %(levelname)s [%(name)s] %(message)s", datefmt=fmt)
+    handler.setFormatter(formatter)
+    root = logging.getLogger()
+
+    root.handlers = []
+    root.addHandler(handler)
+    root.setLevel(level)
+
+
 if __name__ == "__main__":
-    print()
-    print("START batch server")
-    print()
+    setup_logging()
+    logger = logging.getLogger("iec104-simulation.batch_server")
+    logger.info("")
+    logger.info("START batch server")
+    logger.info("")
     c104.set_debug_mode(mode=c104.Debug.Server)
     main()

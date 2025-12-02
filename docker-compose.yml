@@ -11,7 +11,6 @@ services:
     environment:
       - PYTHONUNBUFFERED=1
     volumes:
-      # Optional: Mount logs directory if you want to persist logs
       - ./logs:/app/logs
     networks:
       - iec104-network
