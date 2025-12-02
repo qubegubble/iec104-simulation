@@ -23,7 +23,7 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build image and load
+      - name: Build image (tests run during build)
         uses: docker/build-push-action@v5
         with:
           context: .
@@ -33,7 +33,3 @@ jobs:
 
       - name: Show image
         run: docker images --format '{{.Repository}}:{{.Tag}} {{.Size}}'
-
-      - name: Run tests inside container
-        run: |
-          docker run --rm user/iec104-simulation:ci-${{ github.sha }} python -m pytest -q
