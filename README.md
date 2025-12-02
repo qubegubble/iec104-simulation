@@ -62,6 +62,31 @@ docker run --rm iec104-simulation:local python -m pytest -q
 
 If you cannot run Docker locally, this repository includes a GitHub Actions workflow at `.github/workflows/ci.yml` that builds the container and runs tests in CI.
 
+**Using the published image (GHCR)**
+
+If CI pushes the image to GitHub Container Registry (GHCR), you can pull and run it from any project or machine.
+
+- Pull the latest public image:
+
+```bash
+docker pull ghcr.io/<owner>/iec104-simulation:latest
+```
+
+- Run the container:
+
+```bash
+docker run --rm ghcr.io/<owner>/iec104-simulation:latest python -m pytest -q
+```
+
+- If the package is private, authenticate first (use a PAT with `read:packages`):
+
+```bash
+echo $PAT | docker login ghcr.io -u <username> --password-stdin
+docker pull ghcr.io/<owner>/iec104-simulation:latest
+```
+
+Replace `<owner>` with your GitHub user or organization name.
+
 **CI / GitHub Actions**
 
 - The example workflow builds the Docker image in the runner and runs tests inside it. It uses `docker/build-push-action` with `load: true` so the built image is available to run in the same job.
@@ -76,10 +101,6 @@ If you cannot run Docker locally, this repository includes a GitHub Actions work
 **Contributing**
 
 - Bug reports and PRs are welcome. Please add tests for new features and follow the simple style used in the codebase.
-
-**License**
-
-- Add a `LICENSE` file to this repo to document the intended license (MIT is a common choice). If none exists, the project is currently unlicensed.
 
 **Contact**
 

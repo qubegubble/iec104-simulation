@@ -23,13 +23,55 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build image (tests run during build)
+      - name: Log in to GHCR
+        uses: docker/login-action@v2
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push image (tests run during build)
         uses: docker/build-push-action@v5
         with:
           context: .
           file: ./Dockerfile
-          tags: user/iec104-simulation:ci-${{ github.sha }}
-          load: true
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/iec104-simulation:${{ github.sha }}
+            ghcr.io/${{ github.repository_owner }}/iec104-simulation:latest
 
       - name: Show image
         run: docker images --format '{{.Repository}}:{{.Tag}} {{.Size}}'
+
+      - name: Set GHCR package visibility to public (if possible)
+        # Try with a PAT first if provided, otherwise fall back to GITHUB_TOKEN
+        if: always()
+        env:
+          OWNER: ${{ github.repository_owner }}
+          PACKAGE: iec104-simulation
+          GHCR_PAT: ${{ secrets.GHCR_PAT }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          # Choose token: prefer GHCR_PAT if set, otherwise use GITHUB_TOKEN
+          if [ -n "$GHCR_PAT" ]; then
+            TOKEN="$GHCR_PAT"
+            echo "Using GHCR_PAT provided in secrets"
+          else
+            TOKEN="$GITHUB_TOKEN"
+            echo "GHCR_PAT not provided; using GITHUB_TOKEN"
+          fi
+
+          # Try both organization and user endpoints. Some repos are owned by an org, others by a user.
+          for scope in orgs users; do
+            URL="https://api.github.com/${scope}/${OWNER}/packages/container/${PACKAGE}/visibility"
+            echo "Attempting to set visibility via: $URL"
+            HTTP=$(curl -s -o /dev/stderr -w "%{http_code}" -X PUT -H "Authorization: Bearer $TOKEN" -H "Accept: application/vnd.github+json" "$URL" -d '{"visibility":"public"}' || true)
+            echo "HTTP status: $HTTP"
+            if [ "$HTTP" -ge 200 ] && [ "$HTTP" -lt 300 ]; then
+              echo "Successfully set package visibility to public via $URL"
+              exit 0
+            fi
+          done
+
+          echo "Could not set package visibility automatically. You can set visibility manually in GitHub Packages UI or supply a PAT with package write permissions as the secret GHCR_PAT."
