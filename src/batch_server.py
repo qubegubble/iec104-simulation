@@ -114,7 +114,7 @@ def create_datapoints(station, json_path: str | Path = "Datapoints.json", start_
     return metas, created
 
 def main():
-    server = c104.Server(ip="127.0.0.1", port=2404)
+    server = c104.Server(ip="0.0.0.0", port=2404)
     station = server.add_station(common_address=47)
     assert station is not None, "Failed to add station to server"
 
