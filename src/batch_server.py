@@ -92,7 +92,7 @@ def load_datapoints_file(path: str | Path, start_io: int | None = None) -> dict[
     
     return out
 
-def create_datapoints(station, json_path: str | Path = "Datapoints.json", start_io: int = 8, report_ms_default: int = 3000) -> dict[int, c104.Point]:
+def create_datapoints(station, json_path: str | Path = "Datapoints.json", start_io: int = 8, report_ms_default: int = 3000) -> tuple[dict[int, DataPoint], dict[int, c104.Point]]:
     json_path_obj = Path(json_path)
     json_file = json_path_obj if json_path_obj.is_absolute() else Path(__file__).with_name(json_path_obj.name)
     metas = load_datapoints_file(json_file, start_io=start_io)
@@ -103,8 +103,7 @@ def create_datapoints(station, json_path: str | Path = "Datapoints.json", start_
         dp = DataPoint(name=meta.name, io_address=io, type_iec=meta.type_iec, unit=meta.unit, raw=meta.raw)
 
         simulated_value = _simulate_for_meta(meta)
-        if(simulated_value != 0):
-            point = station.add_point(io_address=dp.io_address, type=c104.Type.M_ME_NC_1, report_ms=report_ms_default)
+        point = station.add_point(io_address=dp.io_address, type=c104.Type.M_ME_NC_1, report_ms=report_ms_default)
 
         point.value = simulated_value
         point.on_before_auto_transmit(callable=before_auto_transmit)
@@ -112,14 +111,14 @@ def create_datapoints(station, json_path: str | Path = "Datapoints.json", start_
 
         created[dp.io_address] = point
 
-    return created
+    return metas, created
 
 def main():
     server = c104.Server(ip="127.0.0.1", port=2404)
     station = server.add_station(common_address=47)
     assert station is not None, "Failed to add station to server"
 
-    create_points = create_datapoints(station, json_path="Datapoints.json", start_io=8, report_ms_default=3000)
+    metas, create_points = create_datapoints(station, json_path="Datapoints.json", start_io=8, report_ms_default=3000)
     
     logger = logging.getLogger("iec104-simulation.batch_server")
     pts = list(create_points.values())
@@ -143,6 +142,8 @@ def main():
             logger.error("Failed to create batch: %s", e)
 
     logger.info("Batch prepared with %s", (len(batch.points) if (batch is not None and hasattr(batch, "points")) else len(selected)))
+
+    point_to_meta = {create_points[io]: meta for io, meta in metas.items()}
 
     server.start()
 
@@ -168,10 +169,24 @@ def main():
 
     time.sleep(1)
     
-    c = 0
-    while server.has_open_connections and c<30:
-        c += 1
-        logger.info("Keep alive until disconnected")
+    logger.info("Starting spontaneous simulation loop")
+    while server.has_open_connections:
+        changed_points = []
+        for point, meta in point_to_meta.items():
+            old_value = point.value
+            new_value = _simulate_for_meta(meta)
+            if new_value != old_value:
+                point.value = new_value
+                changed_points.append(point)
+        
+        if changed_points:
+            try:
+                spontaneous_batch = c104.Batch(cause=c104.Cot.SPONTANEOUS, points=changed_points)
+                server.transmit_batch(spontaneous_batch)
+                logger.info("Transmitted spontaneous batch with %d changed points", len(changed_points))
+            except ValueError as e:
+                logger.error("Failed to create spontaneous batch: %s", e)
+        
         time.sleep(1)
 
 def setup_logging():
